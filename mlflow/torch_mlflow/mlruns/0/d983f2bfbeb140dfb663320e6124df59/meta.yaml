@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/kojimayuto/Desktop/practice/mlflow/torch_mlflow/mlruns/0/d983f2bfbeb140dfb663320e6124df59/artifacts
+end_time: 1593618864844
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+name: ''
+run_id: d983f2bfbeb140dfb663320e6124df59
+run_uuid: d983f2bfbeb140dfb663320e6124df59
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1593618864836
+status: 3
+tags: []
+user_id: kojimayuto

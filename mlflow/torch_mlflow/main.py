@@ -1,109 +1,75 @@
+import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torchvision
-import torchvision.transforms as transforms
-import numpy as np
-import argparse
-from Model import Net
 import mlflow
+import mlflow.pytorch
+from dataset import generate_loader
+from Net import Net
+from utils import train
+
 
 def make_parse():
     """
-    コマンド引数受け取り
+    コマンドライン引数を受け取る
     """
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch_size', default=256, type=int)
-    parser.add_argument('--epochs', default=1, type=int)
+    parser.add_argument('--batch_size', default=256, type=int, help='batch size')
+    parser.add_argument('--epochs', default=50, type=int, help='epochs')
+    parser.add_argument('--lr', default=5e-3, type=float, help='learning_rate')
     return parser
+
+
+def main():
+    """
+    実行関数
+    """
     
-args = make_parse().parse_args()
+    #コマンドライン引数
+    args = make_parse().parse_args()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-transform = transforms.Compose(
-    [transforms.ToTensor(),
-     transforms.Normalize((0.5, ), (0.5, ))])
-trainset = torchvision.datasets.MNIST(root='./data', 
-                                        train=True,
-                                        download=True,
-                                        transform=transform)
-trainloader = torch.utils.data.DataLoader(trainset,
-                                            batch_size=args.batch_size,
-                                            shuffle=True,
-                                            num_workers=2)
+    # data_loader
+    train_loader, test_loader = generate_loader(args.batch_size)
 
-testset = torchvision.datasets.MNIST(root='./data', 
-                                        train=False, 
-                                        download=True, 
-                                        transform=transform)
-testloader = torch.utils.data.DataLoader(testset, 
-                                            batch_size=args.batch_size,
-                                            shuffle=False, 
-                                            num_workers=2)
+    # model
+    model = Net()
 
-classes = tuple(np.linspace(0, 9, 10, dtype=np.uint8))
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(model.parameters(), lr=args.lr)
+    scheduler = optim.lr_scheduler.MultiStepLR(
+        optimizer,
+        milestones=[int(args.epochs*0.8), int(args.epochs*0.9)],
+        gamma=0.1
+    )
 
-# 学習
-net = Net()
+    model = model.to(device)
 
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
-scheduler = optim.lr_scheduler.MultiStepLR(
-    optimizer, 
-    milestones=[int(args.epochs*0.8), int(args.epochs*0.9)],
-    gamma=0.1
-)
+    results = train(
+        epochs=args.epochs, 
+        model=model, 
+        train_loader=train_loader,
+        test_loader=test_loader,
+        criterion=criterion,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        device=device
+    )
 
-epochs = args.epochs
-result = {}
-for epoch in range(epochs):
-    running_loss = 0.0
-    training_num = 0
-    results = {}
+    # mlflow
+    with mlflow.start_run() as run:
 
-    for i, (inputs, labels) in enumerate(trainloader, 0):
-    
-        optimizer.zero_grad()
+        for key, value in vars(args).items():
+            mlflow.log_param(key, value)
 
-        outputs = net(inputs)
-        loss = criterion(outputs, labels)
-        loss.backward()
-   
-        optimizer.step()
-        training_num += labels.size(0)
+        for key, value in results.items():
+            mlflow.log_metric(key, value)
 
-        running_loss += loss.item()
-    running_loss /= training_num
+        mlflow.log_param('loss_type', 'CrossEntropyLoss')
+        mlflow.pytorch.log_model(model, 'model')
 
-    results['running_loss'] = running_loss
-    print("epoch: {}, loss: {}".format(epoch + 1, running_loss))
-    running_loss = 0.0
+if __name__ == '__main__':
+    main()
 
-print("Finish Training")
-
-# 精度検証
-
-correct = 0
-total = 0
-
-"""
-with torch.no_grad():
-    for (images, labels) in testloader:
-        outputs = net(images)
-        _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-"""
-"""
-print('Accuracy: {:.2f} %%'.format(100 * float(correct/total)))
-"""
-
-with mlflow.start_run() as run:
-    tracking_uri = './mlruns'
-    mlflow.set_tracking_uri(tracking_uri)
-    experiment_name = "pra"
-    mlflow.set_experiment(experiment_name)
-    tracking = mlflow.tracking.MlflowClient()
-    experiment = tracking.get_experiment_by_name('pra')
-    print(experiment.experiment_id)
-    mlflow.log_param('running_loss', results['running_loss'])
 
